@@ -16,11 +16,12 @@ namespace DummyClient
 
 	public class ServerSession : Session
 	{
+		public int sessionID;
 
 		public Dictionary<ushort, Packet> packetDict = new Dictionary<ushort, Packet>();
 		MakeSton stonePacket = new MakeSton();
 		InitPacket InitPacket = new InitPacket();
-		public bool isMaster = false;
+		NextTurnPacket nextPacket = new NextTurnPacket();
 
 		public override void OnConnected(EndPoint endPoint)
 		{
@@ -36,13 +37,11 @@ namespace DummyClient
 		{
             int pos = 0;
 
-
-
             ushort size = BitConverter.ToUInt16(buffer.Array, buffer.Offset);
             pos += 2;
             ushort id = BitConverter.ToUInt16(buffer.Array, buffer.Offset + pos);
             pos += 2;
-
+			
 
 			switch ((PacketID)id)
 			{
@@ -53,30 +52,38 @@ namespace DummyClient
 
 						stonePacket.Read(buffer);
 
-						JobQueue.Instance.jobActions.Enqueue( () => { instance.textMesh.text = "READ"; });
 						JobQueue.Instance.jobActions.Enqueue( () => {
-							bool color = !instance.isMyTurn;
-							instance.groundManager.GetGround(stonePacket.x, stonePacket.y).IsWhite = color;
-							instance.isMyTurn = !instance.isMyTurn;
+                            GroundManager.instance.currentGround = GroundManager.instance.GetGround(stonePacket.x , stonePacket.y);
+							GroundManager.instance.currentGround.IsWhite = stonePacket.isWhite;
 							
-						});
+                        });
 					}
 					break;
 				case PacketID.InitPacket:
 					{
+
 						InitPacket.Read(buffer);
 
 						JobQueue.Instance.jobActions.Enqueue(() => 
 						{
-							
-							NetWorkObj.instance.session.isMaster = InitPacket.isMaster;
-							GameManager.instance.isMyTurn = InitPacket.isMaster;
-							GameManager.instance.isMyColor = InitPacket.isMaster;
-                            GameManager.instance.textMesh.text = "Init";
-
+							NetWorkObj.instance.session.sessionID = InitPacket.playerData.sessionId;
+                            GameManager.instance.PlayerData = InitPacket.playerData;
                         });
 
 					}
+					break;
+
+				case PacketID.NextTurn:
+					{
+						nextPacket.Read(buffer);
+
+                        JobQueue.Instance.jobActions.Enqueue(() =>
+                        {
+                            GameManager.instance.IsMyTurn = NetWorkObj.instance.session.sessionID == nextPacket.sessionId;
+                        });
+
+
+                    }
 					break;
 				default:
 					break;

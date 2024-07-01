@@ -1,12 +1,7 @@
 ﻿using ServerCore;
 using System;
-using System.Collections.Generic;
-using System.Drawing;
-using System.Linq;
 using System.Numerics;
 using System.Text;
-using System.Threading.Tasks;
-
 
 namespace Assets.Network.Packet
 {
@@ -15,9 +10,10 @@ namespace Assets.Network.Packet
     {
         InitPacket = 1,
         PlayerInfoOk = 2,
-        playerPos = 3,
+        PlayerPos = 3,
         RpcPacket = 4,
-        MakeStone = 5
+        MakeStone = 5,
+        NextTurn = 10,
     }
 
     public abstract class Packet
@@ -29,9 +25,8 @@ namespace Assets.Network.Packet
         public abstract void Read(ArraySegment<byte> buffer);
         public abstract ArraySegment<byte> Write();
 
-        public void WriteString(ref ArraySegment<byte> buffer , ref ushort size ,string value)
+        protected void WriteString(ref ArraySegment<byte> buffer , ref ushort size ,string value)
         {
-
             ushort stringLength = (ushort)Encoding.Unicode.GetByteCount(value);
             BitConverter.TryWriteBytes(new Span<byte>(buffer.Array, buffer.Offset + size, buffer.Count - size), (ushort)stringLength);
             size += sizeof(ushort);
@@ -44,7 +39,7 @@ namespace Assets.Network.Packet
             size += stringLength;
 
         }
-        public void WriteVector3(ref ArraySegment<byte> buffer, ref ushort size, Vector3 pos)
+        protected void WriteVector3(ref ArraySegment<byte> buffer, ref ushort size, Vector3 pos)
         {
             BitConverter.TryWriteBytes(new Span<byte>(buffer.Array, buffer.Offset, buffer.Count), pos.X);
             size += sizeof(float);
@@ -53,8 +48,7 @@ namespace Assets.Network.Packet
             BitConverter.TryWriteBytes(new Span<byte>(buffer.Array, buffer.Offset, buffer.Count), pos.Z);
             size += sizeof(float);
         }
-
-        public Vector3 ReadVector3(ref ArraySegment<byte> buffer, ref ushort size)
+        protected Vector3 ReadVector3(ref ArraySegment<byte> buffer, ref ushort size)
         {
             Vector3 compleVector3 = new Vector3();
 
@@ -69,14 +63,66 @@ namespace Assets.Network.Packet
         }
 
 
-
     }
 
+    public class NextTurnPacket : Packet
+    {
+        public int sessionId;
+
+        public void PacketInit(int sessionId)
+        {
+            this.sessionId = sessionId;
+        }
+
+        public override void Read(ArraySegment<byte> buffer)
+        {
+            ushort count = 0;
+
+            count += sizeof(ushort);
+            count += sizeof(ushort);
+
+            sessionId = BitConverter.ToUInt16(buffer.Array, buffer.Offset + count);
+            count += sizeof(int);
+
+        }
+
+        public override ArraySegment<byte> Write()
+        {
+            ushort count = 0;
+            ArraySegment<byte> sendBuffer = SendBufferHelper.Open(4096);
+            count += sizeof(ushort);
+
+            BitConverter.TryWriteBytes(new Span<byte>(sendBuffer.Array, sendBuffer.Offset + count, sendBuffer.Count - count), (ushort)PacketID.NextTurn);
+            count += sizeof(ushort);
+
+            BitConverter.TryWriteBytes(new Span<byte>(sendBuffer.Array, sendBuffer.Offset + count, sendBuffer.Count - count), sessionId);
+            count += sizeof(int);
+
+            count += sizeof(ushort);
+            BitConverter.TryWriteBytes(new Span<byte>(sendBuffer.Array, sendBuffer.Offset, sendBuffer.Count), count);
+            return SendBufferHelper.Close(count);
+        }
+    }
 
     public class InitPacket : Packet
     {
 
         public bool isMaster = false;
+
+        public PlayerStruct playerData;
+
+        public void PacketInit(PlayerStruct playerData)
+        {
+            this.playerData = playerData;
+        }
+
+        public void PacketInit(int sessionId, bool isPlayer, bool isWhite)
+        {
+            playerData.sessionId = sessionId;
+            playerData.isWhite = isWhite;
+            playerData.isPlayer = isPlayer;
+        }
+
         public override void Read(ArraySegment<byte> buffer)
         {
             ushort count = 0;
@@ -84,9 +130,17 @@ namespace Assets.Network.Packet
             count += sizeof(ushort);
             count += sizeof(ushort);
 
-            isMaster = BitConverter.ToBoolean(buffer.Array, buffer.Offset + count);
-            count += sizeof(Boolean);
+            playerData.sessionId = BitConverter.ToUInt16(buffer.Array, buffer.Offset + count);
+            count += sizeof(int);
+
+            playerData.isPlayer = BitConverter.ToBoolean(buffer.Array, buffer.Offset + count);
+            count += sizeof(bool);
+
+            playerData.isWhite = BitConverter.ToBoolean(buffer.Array, buffer.Offset + count);
+            count += sizeof(bool);
+
         }
+
 
         public override ArraySegment<byte> Write()
         {
@@ -96,23 +150,12 @@ namespace Assets.Network.Packet
             BitConverter.TryWriteBytes(new Span<byte>(sendBuffer.Array, sendBuffer.Offset + count, sendBuffer.Count - count), (ushort)PacketID.MakeStone);
             count += sizeof(ushort);
 
-
-            count += sizeof(ushort);
-            BitConverter.TryWriteBytes(new Span<byte>(sendBuffer.Array, sendBuffer.Offset, sendBuffer.Count), count);
-            ArraySegment<byte> doneBuffer = SendBufferHelper.Close(count);
-
-            return doneBuffer;
-        }
-        public ArraySegment<byte> Write(bool isMaster)
-        {
-            ushort count = 0;
-            ArraySegment<byte> sendBuffer = SendBufferHelper.Open(4096);
-            count += sizeof(ushort);
-            BitConverter.TryWriteBytes(new Span<byte>(sendBuffer.Array, sendBuffer.Offset + count, sendBuffer.Count - count), (ushort)PacketID.MakeStone);
-            count += sizeof(ushort);
-
-            BitConverter.TryWriteBytes(new Span<byte>(sendBuffer.Array, sendBuffer.Offset + count, sendBuffer.Count - count), isMaster);
-            count += sizeof(Boolean);
+            BitConverter.TryWriteBytes(new Span<byte>(sendBuffer.Array, sendBuffer.Offset + count, sendBuffer.Count - count), playerData.sessionId);
+            count += sizeof(int);
+            BitConverter.TryWriteBytes(new Span<byte>(sendBuffer.Array, sendBuffer.Offset + count, sendBuffer.Count - count), playerData.isPlayer);
+            count += sizeof(bool);
+            BitConverter.TryWriteBytes(new Span<byte>(sendBuffer.Array, sendBuffer.Offset + count, sendBuffer.Count - count), playerData.isWhite);
+            count += sizeof(bool);
 
             count += sizeof(ushort);
             BitConverter.TryWriteBytes(new Span<byte>(sendBuffer.Array, sendBuffer.Offset, sendBuffer.Count), count);
@@ -126,8 +169,15 @@ namespace Assets.Network.Packet
     public class MakeSton : Packet
     {
         public ushort x, y;
-        public bool color = false;
+        public bool isWhite;
 
+
+        public void InitPacket(ushort x , ushort y , bool isWhite)
+        {
+            this.isWhite = isWhite;
+            this.x = x;
+            this.y = y;
+        }
 
         public override void Read(ArraySegment<byte> buffer)
         {
@@ -135,37 +185,29 @@ namespace Assets.Network.Packet
             ReadOnlySpan<byte> readBuffer = new ReadOnlySpan<byte>(buffer.Array,buffer.Offset,buffer.Count);
             //packetId 처리 안할꺼라서 bitconverter사용안함
             count += sizeof(ushort);
-
-
             count += sizeof(ushort);
-            x = BitConverter.ToUInt16(buffer.Array, buffer.Offset + count);
 
+            isWhite = BitConverter.ToBoolean(buffer.Array, buffer.Offset + count);
+            count += sizeof(bool);
+            
+            x = BitConverter.ToUInt16(buffer.Array, buffer.Offset + count);
             count += sizeof(ushort);
             y = BitConverter.ToUInt16(buffer.Array, buffer.Offset + count);
-
-
+            count += sizeof(ushort);
         }
 
         public override ArraySegment<byte> Write()
         {
-            ushort count = 0;
-            ArraySegment<byte> sendBuffer = SendBufferHelper.Open(4096);
-            //todo 에러 메시지라도 보낼 것
 
-
-            ArraySegment<byte> doneBuffer = SendBufferHelper.Close(count);
-
-            return doneBuffer;
-        }
-
-        public ArraySegment<byte> Write(ushort x , ushort y)
-        {
             ushort count = 0;
 
             ArraySegment<byte> sendBuffer = SendBufferHelper.Open(4096);
             count += sizeof(ushort);
             BitConverter.TryWriteBytes(new Span<byte>(sendBuffer.Array, sendBuffer.Offset + count, sendBuffer.Count - count), (ushort)PacketID.MakeStone);
             count += sizeof(ushort);
+
+            BitConverter.TryWriteBytes(new Span<byte>(sendBuffer.Array, sendBuffer.Offset + count, sendBuffer.Count - count), isWhite);
+            count += sizeof(bool);
 
             BitConverter.TryWriteBytes(new Span<byte>(sendBuffer.Array, sendBuffer.Offset + count, sendBuffer.Count - count), x);
             count += sizeof(ushort);
@@ -184,6 +226,9 @@ namespace Assets.Network.Packet
 
     public class RPCPacket : Packet
     {
+        public string funcName = null;
+
+
         public override void Read(ArraySegment<byte> buffer)
         {
             ushort count = 0;
@@ -200,7 +245,6 @@ namespace Assets.Network.Packet
             readTest = Encoding.Unicode.GetString(buffer.Array, count, stringSize);
             Console.WriteLine($"receivString : {readTest}");
             count += stringSize;
-            
         }
 
         public override ArraySegment<byte> Write()
@@ -213,7 +257,7 @@ namespace Assets.Network.Packet
 
             ArraySegment<byte> sendBuffer = SendBufferHelper.Open(4096);
             count += sizeof(ushort);
-            BitConverter.TryWriteBytes(new Span<byte>(sendBuffer.Array, sendBuffer.Offset + count, sendBuffer.Count - count), (ushort)4);
+            BitConverter.TryWriteBytes(new Span<byte>(sendBuffer.Array, sendBuffer.Offset + count, sendBuffer.Count - count), (ushort)PacketID.RpcPacket );
             count += sizeof(ushort);
 
             WriteString(ref sendBuffer,ref count, value);
@@ -225,9 +269,76 @@ namespace Assets.Network.Packet
             return endBuffer;
         }
 
+
+        public ArraySegment<byte> BroadCastWrite()
+        {
+            if(funcName == null)
+            {
+                Console.WriteLine("TODO using this func after Read();");
+
+                return null;
+            }
+
+            ushort count = 0;
+            bool success = true;
+
+            ArraySegment<byte> sendBuffer = SendBufferHelper.Open(4096);
+            count += sizeof(ushort);
+
+            BitConverter.TryWriteBytes(new Span<byte>(sendBuffer.Array, sendBuffer.Offset + count, sendBuffer.Count - count), (ushort)PacketID.RpcPacket );
+            count += sizeof(ushort);
+
+            WriteString(ref sendBuffer, ref count, funcName);
+
+            count += sizeof(ushort);
+            success &= BitConverter.TryWriteBytes(new Span<byte>(sendBuffer.Array, sendBuffer.Offset, sendBuffer.Count), count);
+            ArraySegment<byte> endBuffer = SendBufferHelper.Close(count);
+
+            return endBuffer;
+        }
     }
 
+    public class ResultPacket : Packet
+    {
+        public bool winner;
 
+        public override void Read(ArraySegment<byte> buffer)
+        {
+            ushort count = 0;
+
+            ReadOnlySpan<byte> readBuffer = new ReadOnlySpan<byte>(buffer.Array, buffer.Offset, buffer.Count);
+            count += sizeof(ushort);
+
+
+
+
+
+        }
+
+        public override ArraySegment<byte> Write()
+        {
+            ushort count = 0;
+            return null;
+        }
+        
+        public ArraySegment<byte> Write(bool winningPlayer)
+        {
+
+            ushort count = 0;
+
+            ArraySegment<byte> sendBuffer = SendBufferHelper.Open(4096);
+            count +=sizeof(ushort);
+
+            BitConverter.TryWriteBytes(new Span<byte>(sendBuffer.Array,sendBuffer.Offset+count , sendBuffer.Count - count) , winningPlayer);
+            count += sizeof(bool);
+
+
+
+            BitConverter.TryWriteBytes(new Span<byte>(sendBuffer.Array, sendBuffer.Offset,sendBuffer.Count) , count);
+            return SendBufferHelper.Close(count);
+        }
+
+    }
     public class MakeWhiteRock : Packet
     {
 
@@ -236,7 +347,6 @@ namespace Assets.Network.Packet
         public override void Read(ArraySegment<byte> buffer)
         {
             ushort count = 0;
-            double x, y, z;
             ReadOnlySpan<byte> readBuffer = new ReadOnlySpan<byte>(buffer.Array, buffer.Offset, buffer.Count);
             //packetId
             Vector3 pos = new Vector3();

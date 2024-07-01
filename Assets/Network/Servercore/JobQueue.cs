@@ -13,16 +13,15 @@ namespace ServerCore
             get
             {
                 if (instance == null)
-                {
                     instance = new JobQueue();
-                }
                 return instance;
             }
         }
 
 
-
-
-
+        public void Add(Action queAction)
+        {
+            jobActions.Enqueue(queAction);
+        }
     }
 }

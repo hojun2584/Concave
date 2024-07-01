@@ -6,6 +6,8 @@ using UnityEngine;
 
 public class MouseController : MonoBehaviour
 {
+    public int posX, posY;
+
 
     private void Awake()
     {
@@ -27,6 +29,7 @@ public class MouseController : MonoBehaviour
     void Update()
     {
 
+
         if (Input.GetMouseButtonDown(0)) // 0은 왼쪽 마우스 버튼을 의미합니다.
         {
             // 카메라에서 마우스 위치로 레이를 생성합니다.
@@ -46,12 +49,13 @@ public class MouseController : MonoBehaviour
         Ground hitGround;
         if(hitObject.TryGetComponent<Ground>(out hitGround))
         {
-            if (GameManager.instance.isMyTurn)
+            if (GameManager.instance.IsMyTurn)
             {
-            
-                ArraySegment<byte> sendBuffer = sendPacket.Write(hitGround.x, hitGround.y);
+                sendPacket.InitPacket(hitGround.x,hitGround.y, GameManager.instance.isMyColor);
+                ArraySegment<byte> sendBuffer = sendPacket.Write();
+
+                Debug.Log(sendPacket.isWhite);
                 NetWorkObj.instance.session.Send(sendBuffer);
-            
             }
         }
 
